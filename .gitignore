@@ -45,4 +45,5 @@ build/
 Thumbs.db
 
 # Prisma
-harmony-dental-ai/backend/prisma/migrations/
+harmony-dental-ai/backend/prisma/migrations/harmony-dental-*-backup-*/
+harmony-dental-*-broken-*/

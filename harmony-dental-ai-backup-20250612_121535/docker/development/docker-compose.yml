@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: harmony-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: harmony_dental_ai
+      POSTGRES_USER: harmony_user
+      POSTGRES_PASSWORD: harmony_pass
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - harmony-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harmony_user -d harmony_dental_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Caching and Sessions
+  redis:
+    image: redis:7-alpine
+    container_name: harmony-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - harmony-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API Server
+  backend:
+    build:
+      context: ../../
+      dockerfile: docker/development/Dockerfile.backend
+    container_name: harmony-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://harmony_user:harmony_pass@postgres:5432/harmony_dental_ai
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3001:3001"
+    volumes:
+      - ../../backend/src:/app/src
+      - ../../backend/prisma:/app/prisma
+      - /app/node_modules
+    networks:
+      - harmony-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["npm", "run", "dev"]
+
+  # Database Administration (pgAdmin)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: harmony-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@harmony.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - harmony-network
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  harmony-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

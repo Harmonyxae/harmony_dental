@@ -1,0 +1,841 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Multi-tenant foundation
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  subdomain   String   @unique
+  phone       String?
+  email       String?
+  address     String?
+  timezone    String   @default("America/New_York")
+  
+  // Subscription & billing
+  planType    String   @default("starter") // starter, professional, enterprise
+  isActive    Boolean  @default(true)
+  trialEndsAt DateTime?
+  
+  // AI Configuration
+  aiConfig    Json     @default("{}")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  patients      Patient[]
+  appointments  Appointment[]
+  procedures    Procedure[]
+  providers     Provider[]
+  users         User[]
+  agentInteractions AgentInteraction[]
+  agentMemory   AgentMemory[]
+  promptCustomizations PromptCustomization[]
+  appointmentWaitlist AppointmentWaitlist[]
+  practicePhones    PracticePhone[]
+  scheduleOptimizations ScheduleOptimization[]
+  providerSchedulePatterns ProviderSchedulePattern[]
+  smsMessages   SMSMessage[]
+  services      Service[]
+  integrations  TenantIntegration[]
+  
+  @@map("tenants")
+}
+
+// User management (practice staff)
+model User {
+  id          String   @id @default(uuid())
+  tenantId    String
+  email       String
+  password    String
+  firstName   String
+  lastName    String
+  role        String   // admin, doctor, hygienist, assistant, front_desk
+  isActive    Boolean  @default(true)
+  
+  // Authentication
+  lastLoginAt DateTime?
+  resetToken  String?
+  resetTokenExpiresAt DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  visits      Visit[]
+  treatments  Treatment[]
+  
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+// Enhanced Patient model (from Open Dental + AI enhancements)
+model Patient {
+  id          String   @id @default(uuid())
+  tenantId    String
+  
+  // Open Dental compatible fields
+  firstName   String
+  lastName    String
+  middleInitial String?
+  dateOfBirth DateTime?
+  gender      String?  // M, F, U
+  phoneHome   String?
+  phoneWireless String?
+  email       String?
+  
+  // Address
+  addressLine1 String?
+  addressLine2 String?
+  city        String?
+  state       String?
+  zipCode     String?
+  
+  // Family/Guarantor
+  guarantorId String?
+  guarantor   Patient? @relation("PatientGuarantor", fields: [guarantorId], references: [id])
+  dependents  Patient[] @relation("PatientGuarantor")
+  
+  // Open Dental timing
+  dateFirstVisit DateTime?
+  preferredLanguage String @default("en")
+  
+  // AI Enhancement Fields
+  aiInsights  Json @default("{}")
+  communicationPreferences Json @default("{}")
+  agentInteractionSummary Json @default("{}")
+  noShowRiskScore Decimal @default(0.50) @db.Decimal(3,2)
+  paymentBehaviorScore Decimal @default(0.50) @db.Decimal(3,2)
+  treatmentAcceptanceRate Decimal @default(0.50) @db.Decimal(3,2)
+  lastAgentInteraction DateTime?
+  preferredAppointmentTimes Json @default("{}")
+  cosmeticInterestLevel Decimal @default(0.00) @db.Decimal(3,2)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  appointments Appointment[]
+  procedures  Procedure[]
+  agentInteractions AgentInteraction[]
+  waitlistEntries AppointmentWaitlist[]
+  smsMessages SMSMessage[]
+  communications Communication[]
+  visits       Visit[]
+  treatments   Treatment[]
+  transactions Transaction[]
+  insurances   Insurance[]
+  
+  @@index([tenantId, phoneWireless])
+  @@index([tenantId, email])
+  @@index([tenantId, lastName, firstName])
+  @@map("patients")
+}
+
+// Enhanced Provider model
+model Provider {
+  id          String   @id @default(uuid())
+  tenantId    String
+  firstName   String
+  lastName    String
+  specialty   String?
+  licenseNumber String?
+  npiNumber   String?
+  
+  // AI Learning Fields
+  treatmentPreferences Json @default("{}")
+  codingPatterns Json @default("{}")
+  schedulePreferences Json @default("{}")
+  voiceRecognitionProfile Json @default("{}")
+  
+  // Performance Tracking
+  avgTreatmentTime Json @default("{}")
+  patientSatisfactionScore Decimal? @db.Decimal(3,2)
+  productionEfficiencyScore Decimal? @db.Decimal(3,2)
+  
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  appointments Appointment[]
+  procedures  Procedure[]
+  waitlistEntries AppointmentWaitlist[]
+  schedulePatterns ProviderSchedulePattern[]
+  
+  @@map("providers")
+}
+
+// Enhanced Appointments with AI fields
+model Appointment {
+  id          String   @id @default(uuid())
+  tenantId    String
+  patientId   String
+  providerId  String?
+  
+  // Open Dental compatible
+  startTime   DateTime
+  endTime     DateTime
+  status      String   // scheduled, confirmed, completed, cancelled, no_show
+  appointmentType String?
+  operatory   String?
+  notes       String?
+  pattern     String?  // Open Dental appointment pattern
+  confirmed   Boolean  @default(false)
+  
+  // AI Scheduler Agent Fields
+  createdByAgent String?
+  aiConfidenceScore Decimal @default(1.00) @db.Decimal(3,2)
+  predictedNoShowRisk Decimal? @db.Decimal(3,2)
+  autoFilledCancellation Boolean @default(false)
+  schedulingOptimizationNotes String?
+  patientCommunicationLog Json @default("[]")
+  confirmationAttempts Json @default("[]")
+  waitlistPriority Int @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  provider    Provider? @relation(fields: [providerId], references: [id])
+  procedures  Procedure[]
+  waitlistOrigin AppointmentWaitlist[] @relation("WaitlistScheduled")
+  smsMessages SMSMessage[]
+  
+  @@index([tenantId, startTime])
+  @@index([providerId, startTime])
+  @@index([status, startTime])
+  @@map("appointments")
+}
+
+// Enhanced Procedures with AI billing support
+model Procedure {
+  id          String   @id @default(uuid())
+  tenantId    String
+  patientId   String
+  appointmentId String?
+  providerId  String?
+  
+  // Open Dental compatible
+  procedureCode String  // ADA/CDT codes
+  toothNumber String?
+  surface     String?
+  procedureDate DateTime
+  dateEntryCreated DateTime @default(now())
+  status      String   // TP (treatment plan), C (complete), etc.
+  amount      Decimal  @db.Decimal(10,2)
+  baseUnits   Int      @default(0)
+  unitQty     Int      @default(1)
+  notes       String?
+  
+  // AI Billing & Diagnosis Agent Fields
+  suggestedByAgent String?
+  aiDiagnosisConfidence Decimal? @db.Decimal(3,2)
+  treatmentOutcomeScore Decimal? @db.Decimal(3,2)
+  voiceChartTranscript String?
+  insuranceApprovalProbability Decimal? @db.Decimal(3,2)
+  patientAcceptancePrediction Decimal? @db.Decimal(3,2)
+  followUpRequired Boolean @default(false)
+  cosmeticUpsellOpportunity Json @default("{}")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  provider    Provider? @relation(fields: [providerId], references: [id])
+  
+  @@index([tenantId, procedureDate])
+  @@index([patientId, procedureDate])
+  @@map("procedures")
+}
+
+// AI Agent Interactions (Core logging table)
+model AgentInteraction {
+  id          String   @id @default(uuid())
+  tenantId    String
+  agentType   String   // receptionist, scheduler, billing, etc.
+  patientId   String?
+  appointmentId String?
+  
+  interactionType String // booking, confirmation, follow_up, etc.
+  channel     String   // voice, sms, whatsapp, email, web_chat
+  
+  // Content and Analysis
+  content     Json     // Full conversation/interaction data
+  transcript  String?  // For voice interactions
+  sentimentScore Decimal? @db.Decimal(3,2)
+  confidenceScore Decimal @db.Decimal(3,2)
+  successOutcome Boolean?
+  
+  // Learning and Feedback
+  humanOverride Boolean @default(false)
+  humanFeedback String?
+  learningTags Json @default("[]")
+  
+  // Timing
+  durationSeconds Int?
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  patient     Patient? @relation(fields: [patientId], references: [id])
+  feedback    AgentFeedback[]
+  smsMessages SMSMessage[]
+  
+  @@index([tenantId, agentType, createdAt])
+  @@index([patientId, createdAt])
+  @@map("agent_interactions")
+}
+
+// AI Agent Memory (RAG System Foundation)
+model AgentMemory {
+  id          String   @id @default(uuid())
+  tenantId    String
+  agentType   String
+  memoryType  String   // patient_specific, practice_specific, cross_practice
+  contextId   String?  // patient_id, provider_id, or NULL for practice-wide
+  
+  // Memory Content
+  memoryKey   String
+  memoryValue Json
+  confidenceLevel Decimal @db.Decimal(3,2)
+  usageCount  Int      @default(1)
+  successRate Decimal  @default(1.00) @db.Decimal(3,2)
+  
+  // Learning Metadata
+  learnedFromInteractionId String?
+  lastReinforced DateTime @default(now())
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@unique([tenantId, agentType, memoryType, contextId, memoryKey])
+  @@index([tenantId, agentType, memoryType])
+  @@map("agent_memory")
+}
+
+// AI Agent Feedback (Human-in-the-Loop Training)
+model AgentFeedback {
+  id          String   @id @default(uuid())
+  tenantId    String
+  agentType   String
+  interactionId String
+  
+  // Feedback Details
+  feedbackType String  // thumbs_up, thumbs_down, correction, escalation
+  feedbackValue Int?   // -1, 0, 1 for simple feedback
+  correctionData Json? // What the human said should happen instead
+  humanUserId String?  // Which staff member provided feedback
+  
+  // Learning Application
+  appliedToMemory Boolean @default(false)
+  improvementNotes String?
+  
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  interaction AgentInteraction @relation(fields: [interactionId], references: [id])
+  
+  @@map("agent_feedback")
+}
+
+// AI Prompt Templates and Customizations
+model PromptTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  agentType   String   // receptionist, scheduler, billing, etc.
+  category    String   // greeting, booking, faq, etc.
+  defaultPrompt String @db.Text
+  variables   Json     @default("[]") // Array of variable names
+  isSystem    Boolean  @default(false) // System vs user-customizable
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  customizations PromptCustomization[]
+  
+  @@map("prompt_templates")
+}
+
+model PromptCustomization {
+  id          String   @id @default(uuid())
+  tenantId    String
+  templateId  String
+  
+  // Customized content
+  customPrompt String  @db.Text
+  variables   Json     @default("{}") // Key-value pairs for variable substitution
+  isActive    Boolean  @default(true)
+  
+  // Metadata
+  lastModifiedBy String // User ID who last modified
+  notes       String?  // Admin notes about customization
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  template    PromptTemplate @relation(fields: [templateId], references: [id])
+  
+  @@unique([tenantId, templateId])
+  @@map("prompt_customizations")
+}
+
+// Appointment Waitlist Management
+model AppointmentWaitlist {
+  id          String   @id @default(uuid())
+  tenantId    String
+  patientId   String
+  
+  // Preferred scheduling details
+  preferredDate DateTime
+  preferredTime String  // "09:00", "14:30", etc.
+  appointmentType String
+  providerId  String?
+  duration    Int      @default(60) // minutes
+  
+  // Waitlist management
+  priority    String   @default("medium") // low, medium, high, urgent
+  status      String   @default("active") // active, contacted, scheduled, expired, cancelled
+  maxWaitDays Int      @default(30)
+  
+  // AI Agent tracking
+  createdByAgent String?
+  aiPriorityScore Decimal @default(0.50) @db.Decimal(3,2)
+  contactAttempts Json @default("[]")
+  
+  // Scheduling results
+  scheduledAppointmentId String?
+  contactedAt DateTime?
+  expiredAt   DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  provider    Provider? @relation(fields: [providerId], references: [id])
+  scheduledAppointment Appointment? @relation("WaitlistScheduled", fields: [scheduledAppointmentId], references: [id])
+  
+  @@index([tenantId, status, priority])
+  @@index([preferredDate, status])
+  @@map("appointment_waitlist")
+}
+
+// Practice Phone Number Management
+model PracticePhone {
+  id          String   @id @default(uuid())
+  tenantId    String
+  phoneNumber String   @unique
+  phoneType   String   @default("main") // main, scheduler, receptionist, emergency
+  
+  // AI Agent assignment
+  assignedAgent String? // receptionist, scheduler, billing
+  voiceAgentId String? // ElevenLabs agent ID
+  
+  // Configuration
+  isActive    Boolean  @default(true)
+  businessHours Json   @default("{\"start\":\"08:00\",\"end\":\"17:00\",\"days\":[1,2,3,4,5]}")
+  afterHoursMessage String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@map("practice_phones")
+}
+
+// Schedule Optimization Analytics
+model ScheduleOptimization {
+  id          String   @id @default(uuid())
+  tenantId    String
+  
+  // Optimization session details
+  optimizationType String // daily, weekly, provider_specific, emergency_slot
+  optimizationDate DateTime
+  
+  // Input parameters
+  constraints Json     // Available providers, blocked times, etc.
+  objectives  Json     // Minimize gaps, maximize revenue, balance load
+  
+  // Results
+  originalEfficiency Decimal @db.Decimal(5,2)
+  optimizedEfficiency Decimal @db.Decimal(5,2)
+  improvementPercent Decimal @db.Decimal(5,2)
+  recommendedChanges Json
+  
+  // Implementation tracking
+  changesImplemented Json @default("[]")
+  actualOutcome Decimal? @db.Decimal(5,2)
+  
+  createdAt   DateTime @default(now())
+  measuredAt  DateTime?
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@index([tenantId, optimizationDate])
+  @@map("schedule_optimizations")
+}
+
+// Provider Schedule Patterns (AI Learning)
+model ProviderSchedulePattern {
+  id          String   @id @default(uuid())
+  tenantId    String
+  providerId  String
+  
+  // Pattern details
+  dayOfWeek   Int      // 1=Monday, 7=Sunday
+  timeSlot    String   // "09:00-10:00"
+  appointmentType String?
+  
+  // Performance metrics
+  utilizationRate Decimal @db.Decimal(3,2)
+  noShowRate  Decimal @db.Decimal(3,2)
+  profitabilityScore Decimal @db.Decimal(3,2)
+  patientSatisfactionScore Decimal? @db.Decimal(3,2)
+  
+  // AI insights
+  recommendedBooking Boolean @default(true)
+  aiConfidenceLevel Decimal @db.Decimal(3,2)
+  learningPeriodStart DateTime
+  learningPeriodEnd DateTime @default(now())
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  provider    Provider @relation(fields: [providerId], references: [id])
+  
+  @@unique([tenantId, providerId, dayOfWeek, timeSlot])
+  @@map("provider_schedule_patterns")
+}
+
+// Service/Procedure Definition Management  
+model Service {
+  id          String   @id @default(uuid())
+  tenantId    String
+  
+  // Service details
+  name        String
+  description String?
+  category    String?  // cleaning, restorative, cosmetic, emergency
+  
+  // Scheduling
+  duration    Int      // minutes
+  price       Decimal  @db.Decimal(10,2)
+  
+  // AI Booking Configuration
+  aiBookable  Boolean  @default(true)
+  requiresConsultation Boolean @default(false)
+  emergencyService Boolean @default(false)
+  
+  // Provider assignment
+  allowedProviderTypes Json @default("[]") // ["doctor", "hygienist"]
+  
+  // Learning & optimization
+  avgActualDuration Int? 
+  profitMargin Decimal? @db.Decimal(5,2)
+  popularityScore Decimal @default(0.50) @db.Decimal(3,2)
+  
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@index([tenantId, aiBookable])
+  @@index([category, isActive])
+  @@map("services")
+}
+
+// SMS/Communication Management
+model SMSMessage {
+  id          String   @id @default(uuid())
+  tenantId    String
+  patientId   String?
+  
+  // Message details
+  phoneNumber String
+  content     String   @db.Text
+  direction   String   // inbound, outbound
+  status      String   @default("sent") // sent, delivered, failed, pending
+  
+  // Threading/conversation
+  conversationId String?
+  messageType String   @default("text") // text, mms, automated
+  
+  // Appointment context
+  appointmentId String?
+  agentInteractionId String?
+  
+  // Twilio/Provider details
+  externalMessageId String? // Twilio SID
+  providerCost Decimal? @db.Decimal(10,4)
+  
+  // AI Agent context
+  createdByAgent Boolean @default(false)
+  aiConfidenceScore Decimal? @db.Decimal(3,2)
+  humanReviewed Boolean @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  patient     Patient? @relation(fields: [patientId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  agentInteraction AgentInteraction? @relation(fields: [agentInteractionId], references: [id])
+  
+  @@index([tenantId, conversationId])
+  @@index([patientId, createdAt])
+  @@index([phoneNumber, createdAt])
+  @@map("sms_messages")
+}
+
+// Tenant Integration Management
+model TenantIntegration {
+  id          String   @id @default(uuid())
+  tenantId    String
+  
+  // Integration type
+  provider    String   // twilio, elevenlabs, openai, google
+  
+  // API Configuration
+  apiKey      String?
+  apiSecret   String?
+  
+  // Provider-specific fields
+  accountSid  String?  // Twilio
+  phoneNumber String?  // Twilio
+  voiceId     String?  // ElevenLabs
+  
+  // Settings
+  isActive    Boolean  @default(true)
+  isTest      Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+  
+  // Relations
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@unique([tenantId, provider])
+  @@map("tenant_integrations")
+}
+
+// Communication Management
+model Communication {
+  id            String   @id @default(cuid())
+  patientId     String
+  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  tenantId      String
+  
+  type          String   // SMS, EMAIL, CALL, VOICEMAIL
+  direction     String   // INBOUND, OUTBOUND
+  content       String?  // Message content or call notes
+  phoneNumber   String?
+  status        String   @default("PENDING") // PENDING, SENT, DELIVERED, FAILED, RECEIVED
+  
+  // Call-specific fields
+  duration      Int?     // seconds
+  callSid       String?  // Twilio call ID
+  recordingUrl  String?
+  
+  // Message-specific fields  
+  messageSid    String?  // Twilio message ID
+  
+  // AI Analysis
+  aiSentiment   String?  // POSITIVE, NEUTRAL, NEGATIVE
+  aiSummary     String?
+  appointmentRequested Boolean @default(false)
+  urgencyLevel  String?  // LOW, MEDIUM, HIGH, EMERGENCY
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now())
+  
+  @@map("communications")
+}
+
+// Visit Management
+model Visit {
+  id                String   @id @default(cuid())
+  patientId         String
+  patient           Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId     String?  
+  tenantId          String
+  
+  visitDate         DateTime @default(now())
+  visitType         String   // CONSULTATION, CLEANING, TREATMENT, EMERGENCY, FOLLOW_UP
+  chiefComplaint    String?
+  
+  // Vital Signs
+  bloodPressure     String?
+  temperature       String?
+  heartRate         String?
+  weight            String?
+  
+  // Medical Assessment (Nurse Entry)
+  medicalConditions String?  // JSON array
+  allergies         String?  // JSON array  
+  medications       String?  // JSON array
+  socialHistory     String?
+  familyHistory     String?
+  
+  // Clinical Notes
+  clinicalNotes     String?
+  diagnosis         String?
+  treatmentPlan     String?
+  
+  // Provider Info
+  providerId        String?
+  provider          User?    @relation(fields: [providerId], references: [id])
+  nurseId           String?
+  
+  status            String   @default("IN_PROGRESS") // SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now())
+  
+  // Relations
+  treatments        Treatment[]
+  
+  @@map("visits")
+}
+
+// Treatment Management
+model Treatment {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  visitId         String?
+  visit           Visit?   @relation(fields: [visitId], references: [id])
+  tenantId        String
+  
+  treatmentCode   String   // D0120, D1110, etc.
+  treatmentName   String   // "Periodic Oral Evaluation"
+  toothNumbers    String?  // JSON array ["14", "15"]
+  surfaces        String?  // JSON array ["M", "O", "D"]
+  
+  description     String?
+  notes           String?
+  
+  // Provider
+  providerId      String?
+  provider        User?    @relation(fields: [providerId], references: [id])
+  
+  // Financial
+  feeScheduled    Float    @default(0)
+  feeActual       Float?
+  insurancePortion Float   @default(0)
+  patientPortion  Float    @default(0)
+  
+  // Status
+  status          String   @default("PLANNED") // PLANNED, IN_PROGRESS, COMPLETED, CANCELLED
+  completedAt     DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now())
+  
+  // Relations
+  transactions    Transaction[]
+  
+  @@map("treatments")
+}
+
+// Transaction Management
+model Transaction {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  tenantId        String
+  
+  type            String   // PAYMENT, CHARGE, ADJUSTMENT, REFUND
+  amount          Float
+  description     String
+  
+  // Payment Details
+  paymentMethod   String?  // CASH, CREDIT_CARD, INSURANCE, CHECK
+  cardLast4       String?
+  authCode        String?
+  
+  // Insurance
+  insuranceId     String?
+  claimNumber     String?
+  
+  // Treatment Link
+  treatmentId     String?
+  treatment       Treatment? @relation(fields: [treatmentId], references: [id])
+  
+  status          String   @default("PENDING") // PENDING, COMPLETED, FAILED, REFUNDED
+  processedAt     DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now())
+  
+  @@map("transactions")
+}
+
+// Insurance Management
+model Insurance {
+  id                String   @id @default(cuid())
+  patientId         String
+  patient           Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  tenantId          String
+  
+  isPrimary         Boolean  @default(true)
+  
+  // Insurance Company
+  insuranceCompany  String
+  groupNumber       String?
+  memberNumber      String
+  
+  // Subscriber (if different from patient)
+  subscriberName    String?
+  subscriberDOB     DateTime?
+  relationToPatient String   @default("SELF") // SELF, SPOUSE, CHILD, OTHER
+  
+  // Benefits
+  annualMaximum     Float    @default(0)
+  annualUsed        Float    @default(0)
+  deductible        Float    @default(0)
+  deductibleMet     Float    @default(0)
+  
+  // Coverage Percentages
+  preventiveCoverage Int     @default(100)
+  basicCoverage     Int     @default(80)
+  majorCoverage     Int     @default(50)
+  orthodonticCoverage Int   @default(0)
+  
+  effectiveDate     DateTime?
+  expirationDate    DateTime?
+  isActive          Boolean  @default(true)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now())
+  
+  @@map("insurances")
+}

@@ -969,42 +969,6 @@ router.get('/patients/by-phone', async (req: any, res) => {
   }
 });
 
-// Delete appointment
-router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
-  try {
-    const appointmentId = req.params.id;
-    const tenantId = req.user!.tenantId;
-
-    console.log('🗑️ Deleting appointment:', appointmentId);
-
-    // Check if appointment exists and belongs to tenant
-    const appointment = await prisma.appointment.findFirst({
-      where: {
-        id: appointmentId,
-        tenantId: tenantId
-      }
-    });
-
-    if (!appointment) {
-      return res.status(404).json({ error: 'Appointment not found' });
-    }
-
-    // Delete the appointment
-    await prisma.appointment.delete({
-      where: {
-        id: appointmentId
-      }
-    });
-
-    console.log('✅ Appointment deleted successfully');
-    res.json({ message: 'Appointment deleted successfully' });
-
-  } catch (error) {
-    console.error('❌ Error deleting appointment:', error);
-    res.status(500).json({ error: 'Failed to delete appointment' });
-  }
-});
-
 async function getAlternativeSlots(tenantId: string, requestedTime: Date, providerId?: string) {
   // Simple algorithm to find next 3 available slots
   const alternatives: Array<{ date: string; time: string; dateTime: Date }> = [];
