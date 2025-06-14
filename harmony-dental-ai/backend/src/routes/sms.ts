@@ -144,50 +144,59 @@ router.post('/test', async (req: AuthRequest, res) => {
 // Get all SMS conversations
 router.get('/conversations', authorizeRoles('ADMIN', 'DOCTOR', 'FRONT_DESK'), async (req: AuthRequest, res) => {
   try {
-    // For now, return mock data until we have real SMS integration
-    const conversations = [
-      {
-        id: '1',
-        patientId: '2ceb2f68-b03e-430c-9479-ca8ab2f1b824',
-        patientName: 'John Smith',
-        phoneNumber: '+1 (555) 123-4567',
-        lastMessage: 'CONFIRM - See you tomorrow!',
-        lastMessageTime: new Date('2024-12-10T14:45:00Z'),
-        unreadCount: 0,
-        status: 'active'
+    // Get real SMS conversations from database
+    const communications = await prisma.communication.findMany({
+      where: {
+        tenantId: req.user!.tenantId,
+        type: 'SMS'
       },
-      {
-        id: '2',
-        patientId: '3deb2f68-b03e-430c-9479-ca8ab2f1b825',
-        patientName: 'Sarah Johnson',
-        phoneNumber: '+1 (555) 987-6543',
-        lastMessage: 'Thank you for the reminder!',
-        lastMessageTime: new Date('2024-12-09T16:30:00Z'),
-        unreadCount: 1,
-        status: 'active'
+      include: {
+        patient: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneWireless: true,
+            phoneHome: true
+          }
+        }
       },
-      {
-        id: '3',
-        patientId: '4deb2f68-b03e-430c-9479-ca8ab2f1b826',
-        patientName: 'Mike Wilson',
-        phoneNumber: '+1 (555) 456-7890',
-        lastMessage: 'Can I reschedule my appointment?',
-        lastMessageTime: new Date('2024-12-08T10:15:00Z'),
-        unreadCount: 2,
-        status: 'pending'
-      },
-      {
-        id: '4',
-        patientId: '5deb2f68-b03e-430c-9479-ca8ab2f1b827',
-        patientName: 'Emily Davis',
-        phoneNumber: '+1 (555) 234-5678',
-        lastMessage: 'Insurance question...',
-        lastMessageTime: new Date('2024-12-07T14:20:00Z'),
-        unreadCount: 0,
-        status: 'active'
+      orderBy: {
+        createdAt: 'desc'
       }
-    ];
+    });
 
+    // Group by patient to create conversations
+    const conversationsMap = new Map();
+    
+    communications.forEach(comm => {
+      const patientKey = comm.patientId;
+      const phoneNumber = comm.phoneNumber || comm.patient?.phoneWireless || comm.patient?.phoneHome;
+      
+      if (!conversationsMap.has(patientKey)) {
+        conversationsMap.set(patientKey, {
+          id: patientKey,
+          patientId: comm.patientId,
+          patientName: `${comm.patient?.firstName} ${comm.patient?.lastName}`,
+          phoneNumber: phoneNumber,
+          lastMessage: comm.content,
+          lastMessageTime: comm.createdAt,
+          unreadCount: 0, // Calculate based on read status if you have that field
+          status: 'active',
+          messages: []
+        });
+      }
+      
+      // Update last message if this is more recent
+      const existing = conversationsMap.get(patientKey);
+      if (comm.createdAt > existing.lastMessageTime) {
+        existing.lastMessage = comm.content;
+        existing.lastMessageTime = comm.createdAt;
+      }
+    });
+
+    const conversations = Array.from(conversationsMap.values());
+    
     res.json(conversations);
   } catch (error) {
     console.error('SMS conversations fetch failed:', error);
