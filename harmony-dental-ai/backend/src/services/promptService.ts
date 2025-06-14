@@ -273,7 +273,7 @@ export class PromptService {
       return {
         agentName: 'Harmony',
         practiceName: tenant?.name || 'Our Dental Practice',
-        practicePhone: tenant?.phone || '(555) 123-4567',
+        practicePhone: tenant?.phone || 'Contact office for phone',
         practiceAddress: tenant?.address || '123 Main St, Your City',
         communicationTone: 'friendly and professional',
         officeHours: 'Monday-Friday 8:00 AM - 5:00 PM',

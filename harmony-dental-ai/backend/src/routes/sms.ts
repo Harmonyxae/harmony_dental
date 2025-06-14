@@ -209,125 +209,51 @@ router.get('/conversations/:id', authorizeRoles('ADMIN', 'DOCTOR', 'FRONT_DESK')
   try {
     const { id } = req.params;
     
-    // Mock conversation data
-    const conversations = {
-      '1': {
-        id: '1',
-        patientId: '2ceb2f68-b03e-430c-9479-ca8ab2f1b824',
-        patientName: 'John Smith',
-        phoneNumber: '+1 (555) 123-4567',
-        status: 'active',
-        messages: [
-          {
-            id: 'msg1',
-            content: 'Hi John! This is a reminder about your dental cleaning appointment tomorrow at 10:00 AM. Please reply CONFIRM to confirm or RESCHEDULE if you need to change the time.',
-            direction: 'outbound',
-            timestamp: new Date('2024-12-10T14:30:00Z'),
-            status: 'delivered'
-          },
-          {
-            id: 'msg2',
-            content: 'CONFIRM - See you tomorrow!',
-            direction: 'inbound',
-            timestamp: new Date('2024-12-10T14:45:00Z'),
-            status: 'received'
-          }
-        ]
+    // Get real conversation from database
+    const communications = await prisma.communication.findMany({
+      where: {
+        patientId: id,
+        tenantId: req.user!.tenantId,
+        type: 'SMS'
       },
-      '2': {
-        id: '2',
-        patientId: '3deb2f68-b03e-430c-9479-ca8ab2f1b825',
-        patientName: 'Sarah Johnson',
-        phoneNumber: '+1 (555) 987-6543',
-        status: 'active',
-        messages: [
-          {
-            id: 'msg3',
-            content: 'Hi Sarah! Your cleaning appointment is scheduled for Friday at 2:00 PM. Please arrive 15 minutes early for check-in.',
-            direction: 'outbound',
-            timestamp: new Date('2024-12-09T16:00:00Z'),
-            status: 'delivered'
-          },
-          {
-            id: 'msg4',
-            content: 'Thank you for the reminder!',
-            direction: 'inbound',
-            timestamp: new Date('2024-12-09T16:30:00Z'),
-            status: 'received'
-          },
-          {
-            id: 'msg5',
-            content: 'Will I need to bring anything specific?',
-            direction: 'inbound',
-            timestamp: new Date('2024-12-09T16:31:00Z'),
-            status: 'received'
+      include: {
+        patient: {
+          select: {
+            firstName: true,
+            lastName: true,
+            phoneWireless: true,
+            phoneHome: true
           }
-        ]
+        }
       },
-      '3': {
-        id: '3',
-        patientId: '4deb2f68-b03e-430c-9479-ca8ab2f1b826',
-        patientName: 'Mike Wilson',
-        phoneNumber: '+1 (555) 456-7890',
-        status: 'pending',
-        messages: [
-          {
-            id: 'msg6',
-            content: 'Hi Mike! Your root canal follow-up is scheduled for Thursday at 3:00 PM.',
-            direction: 'outbound',
-            timestamp: new Date('2024-12-08T09:00:00Z'),
-            status: 'delivered'
-          },
-          {
-            id: 'msg7',
-            content: 'Can I reschedule my appointment? Something came up at work.',
-            direction: 'inbound',
-            timestamp: new Date('2024-12-08T10:15:00Z'),
-            status: 'received'
-          },
-          {
-            id: 'msg8',
-            content: 'What times do you have available next week?',
-            direction: 'inbound',
-            timestamp: new Date('2024-12-08T10:16:00Z'),
-            status: 'received'
-          }
-        ]
-      },
-      '4': {
-        id: '4',
-        patientId: '5deb2f68-b03e-430c-9479-ca8ab2f1b827',
-        patientName: 'Emily Davis',
-        phoneNumber: '+1 (555) 234-5678',
-        status: 'active',
-        messages: [
-          {
-            id: 'msg9',
-            content: 'Hi Emily! Your insurance pre-authorization for the crown procedure has been approved.',
-            direction: 'outbound',
-            timestamp: new Date('2024-12-07T14:00:00Z'),
-            status: 'delivered'
-          },
-          {
-            id: 'msg10',
-            content: 'Great! What will be my out-of-pocket cost?',
-            direction: 'inbound',
-            timestamp: new Date('2024-12-07T14:20:00Z'),
-            status: 'received'
-          }
-        ]
+      orderBy: {
+        createdAt: 'asc'
       }
-    };
+    });
 
-    const conversation = conversations[id as keyof typeof conversations];
-    
-    if (!conversation) {
+    if (communications.length === 0) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
+    const patient = communications[0].patient;
+    const conversation = {
+      id: id,
+      patientId: id,
+      patientName: `${patient?.firstName} ${patient?.lastName}`,
+      phoneNumber: patient?.phoneWireless || patient?.phoneHome,
+      status: 'active',
+      messages: communications.map(comm => ({
+        id: comm.id,
+        content: comm.content,
+        direction: comm.direction || 'outbound',
+        timestamp: comm.createdAt,
+        status: 'delivered'
+      }))
+    };
+
     res.json(conversation);
   } catch (error) {
-    console.error('Conversation fetch failed:', error);
+    console.error('SMS conversation fetch failed:', error);
     res.status(500).json({ error: 'Failed to fetch conversation' });
   }
 });
